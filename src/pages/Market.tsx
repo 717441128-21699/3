@@ -21,22 +21,14 @@ import {
 import { ParchementCard } from "@/components/ParchementCard";
 import { MetalButton } from "@/components/MetalButton";
 import { GearDecoration } from "@/components/GearDecoration";
+import { useGameStore } from "@/store/useGameStore";
+import { marketApi } from "@/utils/api";
+import type { Rarity, MarketListing, InventoryItem } from "@/shared/types";
 
 type TabType = "all" | "blueprint" | "material";
-type ItemRarity = "common" | "rare" | "epic" | "legendary";
-
-interface MarketItem {
-  id: string;
-  name: string;
-  rarity: ItemRarity;
-  category: "blueprint" | "material";
-  seller: string;
-  price: number;
-  icon: React.ReactNode;
-}
 
 const rarityConfig: Record<
-  ItemRarity,
+  Rarity,
   { label: string; color: string; border: string; bg: string; text: string }
 > = {
   common: {
@@ -69,103 +61,37 @@ const rarityConfig: Record<
   },
 };
 
-const mockItems: MarketItem[] = [
-  {
-    id: "1",
-    name: "蒸汽核心蓝图",
-    rarity: "epic",
-    category: "blueprint",
-    seller: "IronMaster",
-    price: 3500,
-    icon: <Scroll size={32} />,
-  },
-  {
-    id: "2",
-    name: "精密齿轮组",
-    rarity: "rare",
-    category: "material",
-    seller: "Clockwork_Art",
-    price: 850,
-    icon: <Hammer size={32} />,
-  },
-  {
-    id: "3",
-    name: "永恒水晶",
-    rarity: "legendary",
-    category: "material",
-    seller: "VoidCollector",
-    price: 12800,
-    icon: <Gem size={32} />,
-  },
-  {
-    id: "4",
-    name: "基础锻造图纸",
-    rarity: "common",
-    category: "blueprint",
-    seller: "NoviceSmith",
-    price: 120,
-    icon: <Scroll size={32} />,
-  },
-  {
-    id: "5",
-    name: "激光矩阵蓝图",
-    rarity: "legendary",
-    category: "blueprint",
-    seller: "MysticEngineer",
-    price: 25000,
-    icon: <Sparkles size={32} />,
-  },
-  {
-    id: "6",
-    name: "高温合金板",
-    rarity: "rare",
-    category: "material",
-    seller: "ForgeMaster",
-    price: 680,
-    icon: <Flame size={32} />,
-  },
-  {
-    id: "7",
-    name: "古代发条装置",
-    rarity: "epic",
-    category: "material",
-    seller: "RelicHunter",
-    price: 5600,
-    icon: <Crown size={32} />,
-  },
-  {
-    id: "8",
-    name: "铜质铆钉包",
-    rarity: "common",
-    category: "material",
-    seller: "PartsDealer",
-    price: 45,
-    icon: <Package size={32} />,
-  },
-];
-
-const announcements = [
-  "⚙ 玩家 IronMaster 以 3,500G 售出「蒸汽核心蓝图」",
-  "⚙ 玩家 VoidCollector 以 12,800G 售出「永恒水晶」",
-  "⚙ 玩家 MysticEngineer 以 25,000G 售出「激光矩阵蓝图」",
-];
-
-const inventoryOptions = [
-  { id: "inv1", name: "精密齿轮组 ×5", rarity: "rare" as ItemRarity, avgPrice: 820 },
-  { id: "inv2", name: "古代符文碎片 ×3", rarity: "epic" as ItemRarity, avgPrice: 2100 },
-  { id: "inv3", name: "铜质铆钉包 ×20", rarity: "common" as ItemRarity, avgPrice: 42 },
-  { id: "inv4", name: "龙息合金锭 ×1", rarity: "legendary" as ItemRarity, avgPrice: 8500 },
-];
+const getItemIcon = (itemType: "blueprint" | "material", rarity: Rarity) => {
+  if (itemType === "blueprint") {
+    if (rarity === "legendary") return <Sparkles size={32} />;
+    return <Scroll size={32} />;
+  }
+  if (rarity === "legendary") return <Crown size={32} />;
+  if (rarity === "epic") return <Gem size={32} />;
+  if (rarity === "rare") return <Flame size={32} />;
+  if (rarity === "common") return <Package size={32} />;
+  return <Hammer size={32} />;
+};
 
 export default function Market() {
+  const fetchMarket = useGameStore((s) => s.fetchMarket);
+  const marketListings = useGameStore((s) => s.marketListings);
+  const user = useGameStore((s) => s.user);
+  const addMarketListing = useGameStore((s) => s.addMarketListing);
+
   const [activeTab, setActiveTab] = useState<TabType>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showModal, setShowModal] = useState(false);
-  const [selectedItem, setSelectedItem] = useState(inventoryOptions[0]);
-  const [price, setPrice] = useState<string>("820");
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  const [price, setPrice] = useState<string>("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const announceRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState(0);
+
+  useEffect(() => {
+    fetchMarket();
+  }, [fetchMarket]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -174,23 +100,91 @@ export default function Market() {
     return () => clearInterval(interval);
   }, []);
 
-  const filteredItems = mockItems.filter((item) => {
+  const announcements = marketListings.slice(0, 5).map(
+    (l) => `⚙ 商品「${l.itemName || l.itemId}」以 ${l.price}G 上架中`
+  );
+
+  const inventoryOptions = user?.inventory || [];
+
+  useEffect(() => {
+    if (inventoryOptions.length > 0 && !selectedItem) {
+      setSelectedItem(inventoryOptions[0]);
+      const avg = inventoryOptions[0].type === "blueprint" ? 2000 : 500;
+      setPrice(avg.toString());
+    }
+  }, [inventoryOptions, selectedItem]);
+
+  const filteredItems = marketListings.filter((item) => {
     const matchTab =
-      activeTab === "all" || item.category === activeTab;
+      activeTab === "all" || item.itemType === activeTab;
     const matchSearch =
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.seller.toLowerCase().includes(searchQuery.toLowerCase());
+      (item.itemName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.itemId.toLowerCase().includes(searchQuery.toLowerCase());
     return matchTab && matchSearch;
   });
 
-  const suggestedMin = Math.round(selectedItem.avgPrice * 0.85);
-  const suggestedMax = Math.round(selectedItem.avgPrice * 1.15);
+  const showToastMsg = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleCreateListing = async () => {
+    if (!selectedItem || !user) {
+      showToastMsg("请选择要上架的物品");
+      return;
+    }
+    const priceNum = parseInt(price) || 0;
+    if (priceNum <= 0) {
+      showToastMsg("请输入有效价格");
+      return;
+    }
+    try {
+      const res = await marketApi.createListing({
+        sellerId: user.id,
+        itemType: selectedItem.type,
+        itemId: selectedItem.itemId,
+        itemName: selectedItem.itemId,
+        rarity: selectedItem.rarity,
+        price: priceNum,
+      });
+      if (res.success && res.data) {
+        addMarketListing(res.data.listing);
+        showToastMsg("上架成功！");
+        setShowModal(false);
+      } else {
+        showToastMsg(res.error || "上架失败");
+      }
+    } catch (err) {
+      showToastMsg("上架失败，请重试");
+    }
+  };
+
+  const avgPrice = selectedItem
+    ? selectedItem.type === "blueprint"
+      ? selectedItem.rarity === "legendary"
+        ? 12000
+        : selectedItem.rarity === "epic"
+        ? 3500
+        : selectedItem.rarity === "rare"
+        ? 1200
+        : 300
+      : selectedItem.rarity === "legendary"
+      ? 8000
+      : selectedItem.rarity === "epic"
+      ? 800
+      : selectedItem.rarity === "rare"
+      ? 200
+      : 50
+    : 0;
+
+  const suggestedMin = Math.round(avgPrice * 0.85);
+  const suggestedMax = Math.round(avgPrice * 1.15);
   const priceNum = parseInt(price) || 0;
   const isPriceDeviated =
-    priceNum < suggestedMin || priceNum > suggestedMax;
+    priceNum > 0 && (priceNum < suggestedMin || priceNum > suggestedMax);
   const deviationPercent =
-    priceNum > 0
-      ? Math.round(((priceNum - selectedItem.avgPrice) / selectedItem.avgPrice) * 100)
+    priceNum > 0 && avgPrice > 0
+      ? Math.round(((priceNum - avgPrice) / avgPrice) * 100)
       : 0;
 
   return (
@@ -207,6 +201,15 @@ export default function Market() {
         speed="slow"
         className="absolute top-40 -right-16 opacity-[0.05]"
       />
+
+      {toast && (
+        <div className="fixed top-6 right-6 z-50 animate-float">
+          <div className="gothic-panel px-5 py-3 shadow-bronze-glow">
+            <p className="font-display text-bronze font-bold text-sm">{toast}</p>
+          </div>
+        </div>
+      )}
+
       <div className="relative z-10 max-w-7xl mx-auto px-4 lg:px-8 py-8">
         <div className="text-center mb-6">
           <h1 className="text-3xl lg:text-4xl mb-2 text-bronze-gradient">
@@ -285,7 +288,7 @@ export default function Market() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {filteredItems.map((item) => {
+            {filteredItems.map((item: MarketListing) => {
               const cfg = rarityConfig[item.rarity];
               return (
                 <div
@@ -311,11 +314,11 @@ export default function Market() {
                         color: cfg.color,
                       }}
                     >
-                      {item.icon}
+                      {getItemIcon(item.itemType, item.rarity)}
                     </div>
 
                     <p className="font-display font-bold text-base text-[#2a1f15] mb-2 line-clamp-1 tracking-wider">
-                      {item.name}
+                      {item.itemName || item.itemId}
                     </p>
 
                     <span
@@ -326,14 +329,10 @@ export default function Market() {
                         border: `1px solid ${cfg.border}`,
                       }}
                     >
-                      {cfg.label.toUpperCase()}
+                      {cfg.label.toUpperCase()} · {item.itemType === "blueprint" ? "图纸" : "素材"}
                     </span>
 
                     <div className="w-full pt-3 border-t border-[#8b6e3e]/30 space-y-2">
-                      <div className="flex items-center justify-center gap-1.5 text-sm text-[#6b5a3e]">
-                        <ShoppingCart size={14} />
-                        <span className="italic">卖家: {item.seller}</span>
-                      </div>
                       <div
                         className="flex items-center justify-center gap-1.5 font-display font-black text-xl tracking-wider"
                         style={{ color: "#9a7c17" }}
@@ -418,15 +417,19 @@ export default function Market() {
                       className="w-full flex items-center justify-between px-4 py-3 bg-[#ebe0ce]/60 border-2 border-[#8b6e3e]/40 rounded-sm text-left hover:border-[#c9a227] transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <Package size={20} style={{ color: rarityConfig[selectedItem.rarity].color }} />
+                        <Package size={20} style={{ color: selectedItem ? rarityConfig[selectedItem.rarity].color : "#8b6e3e" }} />
                         <div>
-                          <p className="font-bold text-[#2a1f15]">{selectedItem.name}</p>
-                          <p
-                            className="text-xs font-display tracking-wider"
-                            style={{ color: rarityConfig[selectedItem.rarity].text }}
-                          >
-                            {rarityConfig[selectedItem.rarity].label.toUpperCase()}
+                          <p className="font-bold text-[#2a1f15]">
+                            {selectedItem ? `${selectedItem.itemId} ×${selectedItem.quantity}` : "暂无物品"}
                           </p>
+                          {selectedItem && (
+                            <p
+                              className="text-xs font-display tracking-wider"
+                              style={{ color: rarityConfig[selectedItem.rarity].text }}
+                            >
+                              {rarityConfig[selectedItem.rarity].label.toUpperCase()}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <ChevronDown
@@ -441,16 +444,32 @@ export default function Market() {
 
                     {dropdownOpen && (
                       <div className="absolute top-full left-0 right-0 mt-1 bg-[#f5efe6] border-2 border-[#8b6e3e]/50 rounded-sm shadow-lg z-10 max-h-56 overflow-y-auto">
-                        {inventoryOptions.map((opt) => (
+                        {inventoryOptions.map((opt: InventoryItem) => (
                           <button
                             key={opt.id}
                             onClick={() => {
                               setSelectedItem(opt);
-                              setPrice(opt.avgPrice.toString());
+                              const avg =
+                                opt.type === "blueprint"
+                                  ? opt.rarity === "legendary"
+                                    ? 12000
+                                    : opt.rarity === "epic"
+                                    ? 3500
+                                    : opt.rarity === "rare"
+                                    ? 1200
+                                    : 300
+                                  : opt.rarity === "legendary"
+                                  ? 8000
+                                  : opt.rarity === "epic"
+                                  ? 800
+                                  : opt.rarity === "rare"
+                                  ? 200
+                                  : 50;
+                              setPrice(avg.toString());
                               setDropdownOpen(false);
                             }}
                             className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#d9c7a8]/60 transition-colors ${
-                              selectedItem.id === opt.id ? "bg-[#c9a227]/20" : ""
+                              selectedItem?.id === opt.id ? "bg-[#c9a227]/20" : ""
                             }`}
                           >
                             <Package
@@ -459,7 +478,7 @@ export default function Market() {
                             />
                             <div className="flex-1">
                               <p className="font-bold text-[#2a1f15] text-sm">
-                                {opt.name}
+                                {opt.itemId} ×{opt.quantity}
                               </p>
                               <p
                                 className="text-xs font-display tracking-wider"
@@ -533,7 +552,7 @@ export default function Market() {
                         className="font-display font-bold"
                         style={{ color: "#9a7c17" }}
                       >
-                        {selectedItem.avgPrice.toLocaleString()} G
+                        {avgPrice.toLocaleString()} G
                       </p>
                     </div>
                   </div>
@@ -562,7 +581,7 @@ export default function Market() {
                 >
                   取消
                 </MetalButton>
-                <MetalButton variant="primary" fullWidth icon={<Tag size={18} />}>
+                <MetalButton variant="primary" fullWidth icon={<Tag size={18} />} onClick={handleCreateListing}>
                   确认上架
                 </MetalButton>
               </div>

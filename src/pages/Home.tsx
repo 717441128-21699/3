@@ -17,103 +17,12 @@ import {
 import { ParchementCard } from "@/components/ParchementCard";
 import { MetalButton } from "@/components/MetalButton";
 import { GearDecoration } from "@/components/GearDecoration";
+import { useGameStore } from "@/store/useGameStore";
 import { cn } from "@/lib/utils";
-
-interface HotChamber {
-  id: string;
-  name: string;
-  difficulty: number;
-  clearRate: number;
-  challengers: number;
-  theme: string;
-  description: string;
-}
-
-interface TeamRoom {
-  id: string;
-  name: string;
-  currentPlayers: number;
-  maxPlayers: number;
-  chamberName: string;
-  host: string;
-}
-
-const hotChambers: HotChamber[] = [
-  {
-    id: "chamber-001",
-    name: "蒸汽工坊",
-    difficulty: 3,
-    clearRate: 68,
-    challengers: 12847,
-    theme: "workshop",
-    description: "齿轮与铜管交织的机械迷宫，考验你的逻辑思维。",
-  },
-  {
-    id: "chamber-002",
-    name: "星象观测台",
-    difficulty: 4,
-    clearRate: 42,
-    challengers: 8562,
-    theme: "observatory",
-    description: "解开星辰的秘密，在穹顶之下追寻古老的星图。",
-  },
-  {
-    id: "chamber-003",
-    name: "禁忌图书馆",
-    difficulty: 5,
-    clearRate: 23,
-    challengers: 5231,
-    theme: "library",
-    description: "尘封的典籍中隐藏着被遗忘的知识，敢来挑战吗？",
-  },
-  {
-    id: "chamber-004",
-    name: "熔岩熔炉",
-    difficulty: 4,
-    clearRate: 35,
-    challengers: 7894,
-    theme: "forge",
-    description: "灼热的金属与炽热的火焰，只有强者才能通过。",
-  },
-  {
-    id: "chamber-005",
-    name: "机械花园",
-    difficulty: 2,
-    clearRate: 82,
-    challengers: 15673,
-    theme: "garden",
-    description: "铜枝铁叶构成的奇异花园，适合新手冒险者。",
-  },
-];
-
-const teamRooms: TeamRoom[] = [
-  {
-    id: "room-001",
-    name: "老手带飞队",
-    currentPlayers: 3,
-    maxPlayers: 4,
-    chamberName: "蒸汽工坊",
-    host: "发条之王",
-  },
-  {
-    id: "room-002",
-    name: "萌新探险团",
-    currentPlayers: 2,
-    maxPlayers: 5,
-    chamberName: "机械花园",
-    host: "黄铜匠人",
-  },
-  {
-    id: "room-003",
-    name: "速通挑战组",
-    currentPlayers: 4,
-    maxPlayers: 4,
-    chamberName: "星象观测台",
-    host: "蒸汽法师",
-  },
-];
+import type { Chamber } from "@/shared/types";
 
 function DifficultyStars({ level }: { level: number }) {
+  const normalized = Math.min(5, Math.max(1, Math.ceil(level / 2)));
   return (
     <div className="flex gap-0.5">
       {Array.from({ length: 5 }).map((_, i) => (
@@ -121,7 +30,7 @@ function DifficultyStars({ level }: { level: number }) {
           key={i}
           size={14}
           className={cn(
-            i < level ? "text-bronze fill-bronze" : "text-parchment-400/40"
+            i < normalized ? "text-bronze fill-bronze" : "text-parchment-400/40"
           )}
         />
       ))}
@@ -131,21 +40,36 @@ function DifficultyStars({ level }: { level: number }) {
 
 export default function Home() {
   const navigate = useNavigate();
+  const chambers = useGameStore((s) => s.chambers);
+  const user = useGameStore((s) => s.user);
   const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
+    useGameStore.getState().loadInitialData();
+  }, []);
+
+  const hotChambers = chambers.slice(0, 5);
+
+  useEffect(() => {
+    if (hotChambers.length === 0) return;
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % hotChambers.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, []);
+  }, [hotChambers.length]);
 
   const goToSlide = (index: number) => {
+    if (hotChambers.length === 0) return;
     setCurrentSlide((index + hotChambers.length) % hotChambers.length);
   };
 
   const handleEnterChamber = (id: string) => {
     navigate(`/chamber/${id}`);
+  };
+
+  const getClearRate = (c: Chamber) => {
+    if (!c.stats || c.stats.plays === 0) return 0;
+    return Math.round((c.stats.clears / c.stats.plays) * 100);
   };
 
   return (
@@ -244,7 +168,7 @@ export default function Home() {
                               通关率
                             </p>
                             <span className="text-xl font-bold text-[#3d2f1a] font-display">
-                              {chamber.clearRate}%
+                              {getClearRate(chamber)}%
                             </span>
                           </div>
                           <div>
@@ -252,7 +176,7 @@ export default function Home() {
                               挑战人数
                             </p>
                             <span className="text-xl font-bold text-[#3d2f1a] font-display">
-                              {chamber.challengers.toLocaleString()}
+                              {(chamber.stats?.plays || 0).toLocaleString()}
                             </span>
                           </div>
                         </div>
@@ -293,86 +217,6 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mb-12">
-          <div className="flex items-center gap-3 mb-6">
-            <Users className="text-verdigris" size={24} />
-            <h2 className="text-2xl m-0">快速组队</h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {teamRooms.map((room) => {
-              const seatsLeft = room.maxPlayers - room.currentPlayers;
-              const isFull = seatsLeft <= 0;
-              return (
-                <ParchementCard key={room.id} className="h-full">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="text-lg mb-0.5">{room.name}</h3>
-                      <p className="text-xs text-[#6b5a3e] italic">
-                        房主：{room.host}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "text-xs px-2 py-1 font-display tracking-wider border",
-                        isFull
-                          ? "text-rust border-rust/40 bg-rust/10"
-                          : "text-verdigris border-verdigris/40 bg-verdigris/10"
-                      )}
-                    >
-                      {isFull ? "已满" : `${seatsLeft} 空位`}
-                    </span>
-                  </div>
-
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[#6b5a3e] flex items-center gap-1.5">
-                        <Crown size={14} />
-                        目标密室
-                      </span>
-                      <span className="text-[#3d2f1a] font-semibold">
-                        {room.chamberName}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[#6b5a3e] flex items-center gap-1.5">
-                        <Users size={14} />
-                        队伍人数
-                      </span>
-                      <span className="text-[#3d2f1a] font-semibold">
-                        {room.currentPlayers} / {room.maxPlayers}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-1.5 mb-4">
-                    {Array.from({ length: room.maxPlayers }).map((_, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "flex-1 h-2",
-                          i < room.currentPlayers
-                            ? "bg-metal-gradient"
-                            : "bg-[#8b6e3e]/20"
-                        )}
-                      />
-                    ))}
-                  </div>
-
-                  <MetalButton
-                    icon={<UserPlus size={14} />}
-                    size="sm"
-                    fullWidth
-                    disabled={isFull}
-                  >
-                    {isFull ? "队伍已满" : "一键加入"}
-                  </MetalButton>
-                </ParchementCard>
-              );
-            })}
-          </div>
-        </section>
-
         <section>
           <div className="flex items-center gap-3 mb-6">
             <Zap className="text-ice" size={24} />
@@ -409,16 +253,6 @@ export default function Home() {
                 <p className="text-gothic-text/80 text-sm mb-4 leading-relaxed">
                   参与季度机关设计大赛，赢取稀有蓝图与限定称号。提交你的原创作品，由大师工匠评审团评选。
                 </p>
-                <div className="flex items-center gap-4 text-xs text-gothic-muted">
-                  <span className="flex items-center gap-1">
-                    <Clock size={12} />
-                    剩余 7 天
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users size={12} />
-                    1,284 人已参赛
-                  </span>
-                </div>
                 <div className="mt-4">
                   <MetalButton size="sm" icon={<Crown size={14} />}>
                     立即参赛
@@ -457,16 +291,6 @@ export default function Home() {
                 <p className="text-gothic-text/80 text-sm mb-4 leading-relaxed">
                   查看全服声望、财富、机关造诣等各项排名。登上榜首，成为发条之城传颂的传奇人物。
                 </p>
-                <div className="flex items-center gap-4 text-xs text-gothic-muted">
-                  <span className="flex items-center gap-1">
-                    <Star size={12} />
-                    本周更新
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users size={12} />
-                    共 12,847 人上榜
-                  </span>
-                </div>
                 <div className="mt-4">
                   <MetalButton size="sm" variant="ghost" icon={<Trophy size={14} />}>
                     查看榜单

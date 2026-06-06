@@ -17,110 +17,43 @@ import { ParchementCard } from "@/components/ParchementCard";
 import { MetalButton } from "@/components/MetalButton";
 import { StatBadge } from "@/components/StatBadge";
 import { GearDecoration } from "@/components/GearDecoration";
+import { contestApi, chambersApi } from "@/utils/api";
+import { useGameStore } from "@/store/useGameStore";
 import { cn } from "@/lib/utils";
+import type { ContestEntry, Chamber } from "@/shared/types";
 
-interface ContestWork {
+interface ContestSeasonData {
   id: string;
-  title: string;
-  author: string;
-  avgScore: number;
-  reviewCount: number;
-  totalReviews: number;
-  thumbColors: string[];
+  name: string;
+  theme: string;
+  description: string;
+  startTime: number;
+  endTime: number;
+  status: string;
+  prizes: any[];
+  judges: any[];
+  rules: string[];
+  entriesCount: number;
+  top3: ContestEntry[];
 }
 
-interface PendingWork {
-  id: string;
-  title: string;
-  author: string;
-  thumbColors: string[];
+interface ExtendedContestEntry extends ContestEntry {
+  rank?: number;
+  chamberName?: string;
+  authorName?: string;
 }
 
-const contestWorks: ContestWork[] = [
-  {
-    id: "w1",
-    title: "永动机关塔",
-    author: "发条之王",
-    avgScore: 4.8,
-    reviewCount: 3,
-    totalReviews: 3,
-    thumbColors: ["#c9a227", "#8b6e3e", "#6a1f1f", "#3d6b4f"],
-  },
-  {
-    id: "w2",
-    title: "蒸汽迷宫核心",
-    author: "蒸汽法师",
-    avgScore: 4.6,
-    reviewCount: 2,
-    totalReviews: 3,
-    thumbColors: ["#8b2c2c", "#c9a227", "#4a7fb5", "#2a1f15"],
-  },
-  {
-    id: "w3",
-    title: "黄铜时计阵",
-    author: "时钟大师",
-    avgScore: 4.5,
-    reviewCount: 3,
-    totalReviews: 3,
-    thumbColors: ["#e5c158", "#9a7c17", "#3a2e24", "#6a1f1f"],
-  },
-  {
-    id: "w4",
-    title: "齿轮交响殿",
-    author: "齿轮幽灵",
-    avgScore: 4.3,
-    reviewCount: 1,
-    totalReviews: 3,
-    thumbColors: ["#3d6b4f", "#c9a227", "#8b6e3e", "#1a1410"],
-  },
-  {
-    id: "w5",
-    title: "暗夜机关室",
-    author: "暗夜工匠",
-    avgScore: 4.7,
-    reviewCount: 2,
-    totalReviews: 3,
-    thumbColors: ["#1a1410", "#6a1f1f", "#c9a227", "#4a7fb5"],
-  },
-  {
-    id: "w6",
-    title: "迷雾蒸汽园",
-    author: "迷雾行者",
-    avgScore: 4.4,
-    reviewCount: 3,
-    totalReviews: 3,
-    thumbColors: ["#4a7fb5", "#5a9a74", "#c9a227", "#8b6e3e"],
-  },
+const thumbColorPalettes = [
+  ["#c9a227", "#8b6e3e", "#6a1f1f", "#3d6b4f"],
+  ["#8b2c2c", "#c9a227", "#4a7fb5", "#2a1f15"],
+  ["#e5c158", "#9a7c17", "#3a2e24", "#6a1f1f"],
+  ["#3d6b4f", "#c9a227", "#8b6e3e", "#1a1410"],
+  ["#1a1410", "#6a1f1f", "#c9a227", "#4a7fb5"],
+  ["#4a7fb5", "#5a9a74", "#c9a227", "#8b6e3e"],
 ];
 
-const pendingWorks: PendingWork[] = [
-  {
-    id: "p1",
-    title: "蒸汽心脏塔",
-    author: "黄铜匠人",
-    thumbColors: ["#c9a227", "#8b2c2c", "#1a1410", "#3d6b4f"],
-  },
-  {
-    id: "p2",
-    title: "铜锈迷宫",
-    author: "铜锈猎手",
-    thumbColors: ["#3d6b4f", "#9a7c17", "#8b2c2c", "#2a1f15"],
-  },
-  {
-    id: "p3",
-    title: "星象机关阵",
-    author: "机关学者",
-    thumbColors: ["#4a7fb5", "#c9a227", "#1a1410", "#8b6e3e"],
-  },
-];
-
-const myChambers = [
-  { id: "c1", name: "我的工坊·初试" },
-  { id: "c2", name: "齿轮花园·进阶" },
-  { id: "c3", name: "蒸汽穹顶·大师" },
-];
-
-function WorkThumb({ colors }: { colors: string[] }) {
+function WorkThumb({ idx }: { idx: number }) {
+  const colors = thumbColorPalettes[idx % thumbColorPalettes.length];
   return (
     <div className="grid grid-cols-2 gap-0.5 w-full h-full overflow-hidden">
       {colors.map((c, i) => (
@@ -157,19 +90,20 @@ function StarRating({
 }) {
   const [hover, setHover] = useState(0);
   const displayValue = interactive && hover ? hover : value;
+  const normalizedValue = Math.min(5, Math.max(0, Math.round(displayValue / 20)));
 
   return (
     <div className="flex gap-1">
       {Array.from({ length: 5 }).map((_, i) => {
-        const active = i < displayValue;
+        const active = i < normalizedValue;
         return (
           <button
             key={i}
             type="button"
             disabled={!interactive}
-            onMouseEnter={() => interactive && setHover(i + 1)}
+            onMouseEnter={() => interactive && setHover((i + 1) * 20)}
             onMouseLeave={() => interactive && setHover(0)}
-            onClick={() => interactive && onChange?.(i + 1)}
+            onClick={() => interactive && onChange?.((i + 1) * 20)}
             className={cn(interactive && "cursor-pointer", "transition-transform hover:scale-110")}
           >
             <Star
@@ -187,38 +121,83 @@ function StarRating({
 }
 
 export default function Contest() {
-  const [timeLeft, setTimeLeft] = useState({ days: 7, hours: 12, mins: 34, secs: 56 });
+  const user = useGameStore((s) => s.user);
+  const chambers = useGameStore((s) => s.chambers);
+  const loadInitialData = useGameStore((s) => s.loadInitialData);
+
+  const [season, setSeason] = useState<ContestSeasonData | null>(null);
+  const [entries, setEntries] = useState<ExtendedContestEntry[]>([]);
+  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, mins: 0, secs: 0 });
   const [selectedChamber, setSelectedChamber] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [currentWorkIdx, setCurrentWorkIdx] = useState(0);
   const [score, setScore] = useState(0);
   const [comment, setComment] = useState("");
   const [submitToast, setSubmitToast] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [userChambers, setUserChambers] = useState<Chamber[]>([]);
 
   useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        await loadInitialData();
+        const [seasonRes, entriesRes] = await Promise.all([
+          contestApi.getCurrentSeason(),
+          contestApi.getEntries({ pageSize: 50 }),
+        ]);
+
+        if (seasonRes.success && seasonRes.data) {
+          setSeason(seasonRes.data);
+        }
+
+        if (entriesRes.success && entriesRes.data) {
+          const enrichedEntries: ExtendedContestEntry[] = await Promise.all(
+            entriesRes.data.items.map(async (entry: ExtendedContestEntry) => {
+              try {
+                const chRes = await chambersApi.getChamber(entry.chamberId);
+                const chamberName = chRes.success && chRes.data ? chRes.data.name : `密室 #${entry.chamberId.slice(-4)}`;
+                return { ...entry, chamberName };
+              } catch {
+                return { ...entry, chamberName: `密室 #${entry.chamberId.slice(-4)}` };
+              }
+            })
+          );
+          setEntries(enrichedEntries);
+        }
+      } catch (err) {
+        console.error("Failed to fetch contest data:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [loadInitialData]);
+
+  useEffect(() => {
+    if (!chambers || !user) return;
+    const owned = chambers.filter((c) => c.ownerId === user.id);
+    setUserChambers(owned);
+  }, [chambers, user]);
+
+  useEffect(() => {
+    if (!season) return;
     const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        let { days, hours, mins, secs } = prev;
-        secs--;
-        if (secs < 0) {
-          secs = 59;
-          mins--;
-        }
-        if (mins < 0) {
-          mins = 59;
-          hours--;
-        }
-        if (hours < 0) {
-          hours = 23;
-          days--;
-        }
-        if (days < 0) return { days: 0, hours: 0, mins: 0, secs: 0 };
-        return { days, hours, mins, secs };
-      });
+      const now = Date.now();
+      const remaining = Math.max(0, season.endTime - now);
+
+      const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const mins = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+      const secs = Math.floor((remaining % (1000 * 60)) / 1000);
+
+      setTimeLeft({ days, hours, mins, secs });
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [season]);
 
+  const pendingWorks = entries.filter((e) => e.scores.length < 3);
   const currentWork = pendingWorks[currentWorkIdx];
   const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -227,24 +206,57 @@ export default function Contest() {
     setTimeout(() => setSubmitToast(null), 3000);
   };
 
-  const handleSubmitWork = () => {
+  const handleSubmitWork = async () => {
     if (!selectedChamber) {
       showToast("请先选择要提交的密室作品");
       return;
     }
-    showToast("作品已成功提交至评审池");
-    setSelectedChamber("");
+    if (!user) {
+      showToast("请先登录");
+      return;
+    }
+    try {
+      const res = await contestApi.submitEntry(selectedChamber, season?.id);
+      if (res.success && res.data) {
+        showToast("作品已成功提交至评审池");
+        setSelectedChamber("");
+      } else {
+        showToast(res.error || "提交失败");
+      }
+    } catch (err) {
+      showToast("提交失败，请重试");
+    }
   };
 
-  const handleSubmitReview = () => {
+  const handleSubmitReview = async () => {
     if (score === 0) {
       showToast("请先给出星级评分");
       return;
     }
-    showToast(`评分已提交：${score}星`);
-    setScore(0);
-    setComment("");
-    setCurrentWorkIdx((prev) => (prev + 1) % pendingWorks.length);
+    if (!currentWork) {
+      showToast("暂无待评审作品");
+      return;
+    }
+    try {
+      const judgeId = season?.judges?.[0]?.id || "judge1";
+      const res = await contestApi.scoreEntry(currentWork.id, judgeId, score, comment);
+      if (res.success) {
+        showToast(`评分已提交：${Math.round(score / 20)}星`);
+        setScore(0);
+        setComment("");
+        setCurrentWorkIdx((prev) => (prev + 1) % Math.max(1, pendingWorks.length));
+        const updatedEntries = entries.map((e) =>
+          e.id === currentWork.id
+            ? { ...e, scores: [...e.scores, { judgeId, score, comment }], avgScore: res.data?.avgScore || e.avgScore }
+            : e
+        );
+        setEntries(updatedEntries);
+      } else {
+        showToast(res.error || "评分失败");
+      }
+    } catch (err) {
+      showToast("评分失败，请重试");
+    }
   };
 
   return (
@@ -286,163 +298,188 @@ export default function Contest() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <ParchementCard
-              title="本赛季 · 蒸汽朋克秘境"
-              subtitle="主题：打造充满维多利亚时代工业美学的机关密室"
+              title={season ? `本赛季 · ${season.name}` : "本赛季信息加载中..."}
+              subtitle={season?.theme || ""}
               icon={<Swords size={24} />}
             >
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="relative overflow-hidden border border-[#8b6e3e]/40 rounded-sm p-4"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, rgba(201,162,39,0.1) 0%, rgba(26,20,16,0.6) 100%)",
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <Timer size={18} className="text-rust-light" />
-                    <span className="font-display text-sm tracking-wider text-[#5a4a1e]">
-                      剩余时间
-                    </span>
-                  </div>
-                  <div className="flex gap-2 text-center">
-                    {[
-                      { v: timeLeft.days, l: "天" },
-                      { v: timeLeft.hours, l: "时" },
-                      { v: timeLeft.mins, l: "分" },
-                      { v: timeLeft.secs, l: "秒" },
-                    ].map((t, i) => (
-                      <div key={i} className="flex-1">
-                        <div className="font-display font-black text-2xl text-[#2a1f15] bg-metal-gradient rounded-sm py-1 shadow-metal-inset border border-[#8b6e3e]">
-                          {pad(t.v)}
+              {isLoading ? (
+                <div className="text-center py-8 text-[#6b5a3e]">
+                  <Swords size={48} className="mx-auto mb-4 opacity-40 animate-pulse" />
+                  <p className="text-lg italic">加载赛季信息...</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="relative overflow-hidden border border-[#8b6e3e]/40 rounded-sm p-4"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, rgba(201,162,39,0.1) 0%, rgba(26,20,16,0.6) 100%)",
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <Timer size={18} className="text-rust-light" />
+                      <span className="font-display text-sm tracking-wider text-[#5a4a1e]">
+                        剩余时间
+                      </span>
+                    </div>
+                    <div className="flex gap-2 text-center">
+                      {[
+                        { v: timeLeft.days, l: "天" },
+                        { v: timeLeft.hours, l: "时" },
+                        { v: timeLeft.mins, l: "分" },
+                        { v: timeLeft.secs, l: "秒" },
+                      ].map((t, i) => (
+                        <div key={i} className="flex-1">
+                          <div className="font-display font-black text-2xl text-[#2a1f15] bg-metal-gradient rounded-sm py-1 shadow-metal-inset border border-[#8b6e3e]">
+                            {pad(t.v)}
+                          </div>
+                          <div className="text-xs text-[#6b5a3e] mt-1 tracking-wider">
+                            {t.l}
+                          </div>
                         </div>
-                        <div className="text-xs text-[#6b5a3e] mt-1 tracking-wider">
-                          {t.l}
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div className="relative overflow-hidden border border-[#8b6e3e]/40 rounded-sm p-4"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, rgba(139,44,44,0.12) 0%, rgba(26,20,16,0.6) 100%)",
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <Crown size={18} className="text-bronze" />
-                    <span className="font-display text-sm tracking-wider text-[#5a4a1e]">
-                      冠军奖励
-                    </span>
+                  <div className="relative overflow-hidden border border-[#8b6e3e]/40 rounded-sm p-4"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, rgba(139,44,44,0.12) 0%, rgba(26,20,16,0.6) 100%)",
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <Crown size={18} className="text-bronze" />
+                      <span className="font-display text-sm tracking-wider text-[#5a4a1e]">
+                        冠军奖励
+                      </span>
+                    </div>
+                    <StatBadge
+                      variant="bronze"
+                      icon={<Award size={14} />}
+                      label="限定传说级"
+                      value="机关图纸"
+                      className="w-full mb-2"
+                    />
+                    {season?.prizes?.[0]?.reward?.coins && (
+                      <StatBadge
+                        variant="rust"
+                        icon={<Coins size={14} />}
+                        label="古铜金币"
+                        value={season.prizes[0].reward.coins.toLocaleString()}
+                        className="w-full"
+                      />
+                    )}
                   </div>
-                  <StatBadge
-                    variant="bronze"
-                    icon={<Award size={14} />}
-                    label="限定传说级"
-                    value="机关图纸"
-                    className="w-full mb-2"
-                  />
-                  <StatBadge
-                    variant="rust"
-                    icon={<Coins size={14} />}
-                    label="古铜金币"
-                    value="10,000"
-                    className="w-full"
-                  />
-                </div>
 
-                <div className="relative overflow-hidden border border-[#8b6e3e]/40 rounded-sm p-4"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, rgba(61,107,79,0.12) 0%, rgba(26,20,16,0.6) 100%)",
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <Trophy size={18} className="text-verdigris-light" />
-                    <span className="font-display text-sm tracking-wider text-[#5a4a1e]">
-                      赛季进度
-                    </span>
+                  <div className="relative overflow-hidden border border-[#8b6e3e]/40 rounded-sm p-4"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, rgba(61,107,79,0.12) 0%, rgba(26,20,16,0.6) 100%)",
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <Trophy size={18} className="text-verdigris-light" />
+                      <span className="font-display text-sm tracking-wider text-[#5a4a1e]">
+                        赛季进度
+                      </span>
+                    </div>
+                    <StatBadge
+                      variant="verdigris"
+                      icon={<User size={14} />}
+                      label="参赛人数"
+                      value={(season?.entriesCount || 0).toLocaleString()}
+                      showProgress
+                      maxValue={2000}
+                      className="w-full mb-2"
+                    />
+                    <StatBadge
+                      variant="default"
+                      icon={<Eye size={14} />}
+                      label="作品数量"
+                      value={entries.length.toLocaleString()}
+                      className="w-full"
+                    />
                   </div>
-                  <StatBadge
-                    variant="verdigris"
-                    icon={<User size={14} />}
-                    label="参赛人数"
-                    value="1,284"
-                    showProgress
-                    maxValue={2000}
-                    className="w-full mb-2"
-                  />
-                  <StatBadge
-                    variant="default"
-                    icon={<Eye size={14} />}
-                    label="作品数量"
-                    value="847"
-                    className="w-full"
-                  />
                 </div>
-              </div>
+              )}
             </ParchementCard>
 
             <ParchementCard
               title="参赛作品"
-              subtitle={`共 ${contestWorks.length} 件作品进入评审阶段`}
+              subtitle={`共 ${entries.length} 件作品进入评审阶段`}
               icon={<Award size={24} />}
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {contestWorks.map((work) => {
-                  const progress = (work.reviewCount / work.totalReviews) * 100;
-                  const isComplete = work.reviewCount >= work.totalReviews;
-                  return (
-                    <div
-                      key={work.id}
-                      className="relative group border border-[#8b6e3e]/40 overflow-hidden transition-all duration-300 hover:shadow-bronze-glow hover:scale-[1.02]"
-                    >
-                      <div className="aspect-video relative">
-                        <WorkThumb colors={work.thumbColors} />
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#1a1410]/80 to-transparent" />
-                        <div className="absolute top-2 right-2">
-                          <div className={cn(
-                            "px-2 py-0.5 text-xs font-display tracking-wider border",
-                            isComplete
-                              ? "text-verdigris-light border-verdigris/50 bg-verdigris/20"
-                              : "text-bronze border-bronze/50 bg-bronze/10"
-                          )}>
-                            {work.reviewCount}/{work.totalReviews} 评审
+              {isLoading ? (
+                <div className="text-center py-12 text-[#6b5a3e]">
+                  <Award size={48} className="mx-auto mb-4 opacity-40 animate-pulse" />
+                  <p className="text-lg italic">加载作品列表...</p>
+                </div>
+              ) : entries.length === 0 ? (
+                <div className="text-center py-12 text-[#6b5a3e]">
+                  <Award size={48} className="mx-auto mb-4 opacity-40" />
+                  <p className="text-lg italic">暂无参赛作品</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {entries.map((work, idx) => {
+                    const totalReviews = 3;
+                    const reviewCount = work.scores.length;
+                    const progress = (reviewCount / totalReviews) * 100;
+                    const isComplete = reviewCount >= totalReviews;
+                    return (
+                      <div
+                        key={work.id}
+                        className="relative group border border-[#8b6e3e]/40 overflow-hidden transition-all duration-300 hover:shadow-bronze-glow hover:scale-[1.02]"
+                      >
+                        <div className="aspect-video relative">
+                          <WorkThumb idx={idx} />
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#1a1410]/80 to-transparent" />
+                          <div className="absolute top-2 right-2">
+                            <div className={cn(
+                              "px-2 py-0.5 text-xs font-display tracking-wider border",
+                              isComplete
+                                ? "text-verdigris-light border-verdigris/50 bg-verdigris/20"
+                                : "text-bronze border-bronze/50 bg-bronze/10"
+                            )}>
+                              {reviewCount}/{totalReviews} 评审
+                            </div>
+                          </div>
+                          <div className="absolute bottom-2 left-2 right-2">
+                            <h4 className="font-display font-bold text-bronze text-sm truncate drop-shadow-lg">
+                              {work.chamberName || "未知密室"}
+                            </h4>
                           </div>
                         </div>
-                        <div className="absolute bottom-2 left-2 right-2">
-                          <h4 className="font-display font-bold text-bronze text-sm truncate drop-shadow-lg">
-                            {work.title}
-                          </h4>
+                        <div className="p-3 bg-[#ebe0ce]">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-1.5 text-[#5a4a1e]">
+                              <User size={14} />
+                              <span className="text-sm">
+                                {work.authorName || `参赛者 #${work.contestantId.slice(-4)}`}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Star size={14} className="fill-bronze text-bronze" />
+                              <span className="font-display font-bold text-[#2a1f15]">
+                                {work.avgScore > 0 ? work.avgScore.toFixed(1) : "待评"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="h-1.5 bg-gothic-bg rounded-full overflow-hidden border border-gothic-border">
+                            <div
+                              className={cn(
+                                "h-full rounded-full transition-all duration-500",
+                                isComplete ? "bg-gradient-to-r from-verdigris-dark to-verdigris-light"
+                                           : "bg-gradient-to-r from-bronze-dark to-bronze-light"
+                              )}
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
-                      <div className="p-3 bg-[#ebe0ce]">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-1.5 text-[#5a4a1e]">
-                            <User size={14} />
-                            <span className="text-sm">{work.author}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Star size={14} className="fill-bronze text-bronze" />
-                            <span className="font-display font-bold text-[#2a1f15]">
-                              {work.avgScore.toFixed(1)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="h-1.5 bg-gothic-bg rounded-full overflow-hidden border border-gothic-border">
-                          <div
-                            className={cn(
-                              "h-full rounded-full transition-all duration-500",
-                              isComplete ? "bg-gradient-to-r from-verdigris-dark to-verdigris-light"
-                                         : "bg-gradient-to-r from-bronze-dark to-bronze-light"
-                            )}
-                            style={{ width: `${progress}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </ParchementCard>
 
             <ParchementCard
@@ -458,30 +495,36 @@ export default function Contest() {
                   >
                     <span className={cn(selectedChamber ? "text-gothic-text" : "text-gothic-muted italic")}>
                       {selectedChamber
-                        ? myChambers.find((c) => c.id === selectedChamber)?.name
+                        ? userChambers.find((c) => c.id === selectedChamber)?.name
                         : "选择要提交的密室作品..."}
                     </span>
                     <ChevronDown size={18} className={cn("transition-transform text-gothic-muted", dropdownOpen && "rotate-180")} />
                   </button>
                   {dropdownOpen && (
                     <div className="absolute top-full left-0 right-0 mt-1 z-20 border border-gothic-border bg-gothic-surface shadow-lg">
-                      {myChambers.map((c) => (
-                        <button
-                          key={c.id}
-                          onClick={() => {
-                            setSelectedChamber(c.id);
-                            setDropdownOpen(false);
-                          }}
-                          className={cn(
-                            "w-full text-left px-4 py-2.5 font-body text-sm transition-colors",
-                            selectedChamber === c.id
-                              ? "bg-bronze/10 text-bronze"
-                              : "text-gothic-text hover:bg-gothic-bg"
-                          )}
-                        >
-                          {c.name}
-                        </button>
-                      ))}
+                      {userChambers.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-gothic-muted italic">
+                          暂无可用的密室作品
+                        </div>
+                      ) : (
+                        userChambers.map((c) => (
+                          <button
+                            key={c.id}
+                            onClick={() => {
+                              setSelectedChamber(c.id);
+                              setDropdownOpen(false);
+                            }}
+                            className={cn(
+                              "w-full text-left px-4 py-2.5 font-body text-sm transition-colors",
+                              selectedChamber === c.id
+                                ? "bg-bronze/10 text-bronze"
+                                : "text-gothic-text hover:bg-gothic-bg"
+                            )}
+                          >
+                            {c.name}
+                          </button>
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
@@ -498,17 +541,22 @@ export default function Contest() {
               subtitle="为待评审作品打分并撰写评论"
               icon={<Trophy size={24} />}
             >
-              {currentWork && (
+              {pendingWorks.length === 0 ? (
+                <div className="text-center py-8 text-[#6b5a3e]">
+                  <Trophy size={48} className="mx-auto mb-4 opacity-40" />
+                  <p className="text-lg italic">暂无待评审作品</p>
+                </div>
+              ) : currentWork && (
                 <div className="space-y-4">
                   <div className="relative aspect-video overflow-hidden border border-[#8b6e3e]/40">
-                    <WorkThumb colors={currentWork.thumbColors} />
+                    <WorkThumb idx={currentWorkIdx} />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#1a1410]/85 via-transparent to-transparent" />
                     <div className="absolute bottom-0 left-0 right-0 p-3">
                       <h4 className="font-display font-bold text-bronze drop-shadow-lg">
-                        {currentWork.title}
+                        {currentWork.chamberName || "未知作品"}
                       </h4>
                       <p className="text-xs text-[#d4c4a8]/80 flex items-center gap-1">
-                        <User size={12} /> {currentWork.author}
+                        <User size={12} /> 参赛者 #{currentWork.contestantId.slice(-4)}
                       </p>
                     </div>
                   </div>
@@ -520,7 +568,7 @@ export default function Contest() {
                     <StarRating value={score} onChange={setScore} interactive size={28} />
                     {score > 0 && (
                       <p className="text-sm text-[#3d2f1a] mt-2 italic">
-                        已选择 {score} 星评级
+                        已选择 {Math.round(score / 20)} 星评级 ({score}分)
                       </p>
                     )}
                   </div>
@@ -564,7 +612,7 @@ export default function Contest() {
                               : "border-[#8b6e3e]/30 opacity-60 hover:opacity-100"
                           )}
                         >
-                          <WorkThumb colors={w.thumbColors} />
+                          <WorkThumb idx={i} />
                         </button>
                       ))}
                     </div>
